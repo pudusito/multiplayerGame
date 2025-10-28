@@ -1,0 +1,15 @@
+src/
+└─ components/
+   ├─ character/
+   │  ├─ CameraController.jsx   ← cámara que sigue al personaje
+   │  ├─ Character.jsx          ← modelo 3D del personaje (sin cambios)
+   │  ├─ CharacterController.jsx← RigidBody + Character + hook de controles
+   |
+   ├─ terrain/
+   │  ├─ Ground.jsx             ← suelo base con dimenciones del mundo
+   │  └─ Map.jsx                ← mapas con colliders
+   └─ UI.jsx                    ← elementos UI
+   └─ Experience.jsx               ← combina todo: mapa, suelo, personaje y cámara
+└─ App.jsx
+└─ index.css
+└─ main.jsx
