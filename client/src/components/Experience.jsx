@@ -38,38 +38,25 @@ export const Experience = () => {
       <ambientLight intensity={1} />
       <ContactShadows blur={2} />
 
-        <Ground />
-      {/*   <Map /> */}
+      <Ground />
+      {/* <Map /> */}
 
-        {characters.map((char) => {
-          // Calcular rotación local
-          let rotationY = 0;
+      {characters.map((char) => {
+        // Usar SIEMPRE la rotación mantenida por el servidor
+        const rotationY = Number.isFinite(char.rotation) ? char.rotation : 0;
 
-          if (char.input?.target) {
-            const dx = char.input.target[0] - char.position[0];
-            const dz = char.input.target[2] - char.position[2];
-            rotationY = Math.atan2(dx, dz);
-          } else {
-            const { forward, backward, left, right } = char.input || {};
-            const dx = (right ? 1 : 0) - (left ? 1 : 0);
-            const dz = (backward ? 1 : 0) - (forward ? 1 : 0);
-            if (dx !== 0 || dz !== 0) rotationY = Math.atan2(dx, dz);
-          }
-
-          return (
-            <group key={char.id} position={char.position}>
-              <Model
-                hairColor={char.hairColor}
-                topColor={char.topColor}
-                bottomColor={char.bottomColor}
-                shoeColor={char.shoeColor}
-                animation={char.animation}
-                rotationY={rotationY} // <-- pasamos rotación local
-              />
-            </group>
-          );
-        })}
-
+        return (
+          <group key={char.id} position={char.position} rotation={[0, rotationY, 0]}>
+            <Model
+              hairColor={char.hairColor}
+              topColor={char.topColor}
+              bottomColor={char.bottomColor}
+              shoeColor={char.shoeColor}
+              animation={char.animation}
+            />
+          </group>
+        );
+      })}
     </>
   );
 };

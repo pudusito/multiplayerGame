@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { socket } from "../conection/SocketManager";
 
 export const usePlayerInput = () => {
@@ -8,8 +8,11 @@ export const usePlayerInput = () => {
     left: false,
     right: false,
     run: false,
-    jump: false
+    jump: false,
+    target: null,
   });
+
+
   const [animation, setAnimation] = useState("CharacterArmature|Idle");
   const [rotationY, setRotationY] = useState(0);
 
@@ -17,13 +20,28 @@ export const usePlayerInput = () => {
   const RUN_SPEED = 0.1;
   const JUMP_SPEED = 0.15;
   const GRAVITY = -0.005;
-
+  // --- Estado de posición y rotación ---
   const positionRef = useRef([0, 0, 0]);
+  const rotationRef = useRef(0);
+  // --- Estado de salto ---
   const velocityY = useRef(0);
   const isGrounded = useRef(true);
-
+  // --- Movimiento hacia click ---
   const targetRef = useRef(null);
   const movingToTarget = useRef(false);
+
+  // Utilidad para calcular orientación deseada
+  const calcRotation = () => {
+    if (targetRef.current) {
+      const dx = targetRef.current[0] - positionRef.current[0];
+      const dz = targetRef.current[2] - positionRef.current[2];
+      if (dx !== 0 || dz !== 0) return Math.atan2(dx, dz);
+    }
+    const mx = (input.current.right ? 1 : 0) - (input.current.left ? 1 : 0);
+    const mz = (input.current.backward ? 1 : 0) - (input.current.forward ? 1 : 0);
+    if (mx !== 0 || mz !== 0) return Math.atan2(mx, mz);
+    return rotationRef.current; // última orientación válida
+  };
 
   // --- Captura de teclas ---
   useEffect(() => {
@@ -37,13 +55,20 @@ export const usePlayerInput = () => {
         case "shift": input.current.run = true; changed = true; break;
         case " ":
           if (isGrounded.current) {
-            input.current.jump = true;  // activamos salto
+            input.current.jump = true;
             changed = true;
           }
           break;
       }
+
+      // Emitir estado si hubo cambios
       if (changed) {
-        socket.emit("move", { ...input.current, target: null });
+        const rot = calcRotation();
+        rotationRef.current = rot;
+        setRotationY(rot);
+        targetRef.current = null;
+        input.current.target = null;
+        socket.emit("move", { ...input.current, target: null, rotation: rot });
         movingToTarget.current = false;
       }
     };
@@ -56,9 +81,14 @@ export const usePlayerInput = () => {
         case "a": input.current.left = false; changed = true; break;
         case "d": input.current.right = false; changed = true; break;
         case "shift": input.current.run = false; changed = true; break;
-        case " ": input.current.jump = false; changed = true; break; // corregido
+        case " ": input.current.jump = false; changed = true; break;
       }
-      if (changed) socket.emit("move", { ...input.current, target: null });
+      if (changed) {
+        const rot = calcRotation();
+        rotationRef.current = rot;
+        setRotationY(rot);
+        socket.emit("move", { ...input.current, target: null, rotation: rot });
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -76,14 +106,19 @@ export const usePlayerInput = () => {
         setAnimation("CharacterArmature|Jump");
         return;
       }
-      const moving = input.current.forward || input.current.backward || input.current.left || input.current.right || movingToTarget.current;
+      const moving =
+        input.current.forward ||
+        input.current.backward ||
+        input.current.left ||
+        input.current.right ||
+        movingToTarget.current;
       setAnimation(moving ? "CharacterArmature|Run" : "CharacterArmature|Idle");
     };
     const interval = setInterval(updateAnimation, 50);
     return () => clearInterval(interval);
   }, []);
 
-  // --- Actualización de posición ---
+  // --- Actualización de posición local (predicción opcional) ---
   const updateLocalPosition = (deltaTime) => {
     let dx = 0, dz = 0;
     const SPEED = input.current.run ? RUN_SPEED : WALK_SPEED;
@@ -106,6 +141,7 @@ export const usePlayerInput = () => {
       } else {
         movingToTarget.current = false;
         targetRef.current = null;
+        input.current.target = null;
       }
     }
 
@@ -127,17 +163,9 @@ export const usePlayerInput = () => {
       isGrounded.current = true;
     }
 
-    // --- Rotación ---
-    let rot = rotationY;
-    if (targetRef.current) {
-      const dx = targetRef.current[0] - positionRef.current[0];
-      const dz = targetRef.current[2] - positionRef.current[2];
-      if (dx !== 0 || dz !== 0) rot = Math.atan2(dx, dz);
-    } else {
-      const dx = (input.current.right ? 1 : 0) - (input.current.left ? 1 : 0);
-      const dz = (input.current.backward ? 1 : 0) - (input.current.forward ? 1 : 0);
-      if (dx !== 0 || dz !== 0) rot = Math.atan2(dx, dz);
-    }
+    // --- Rotación (mantener la última si no hay input) ---
+    const rot = calcRotation();
+    rotationRef.current = rot;
     setRotationY(rot);
 
     return positionRef.current;
@@ -145,8 +173,12 @@ export const usePlayerInput = () => {
 
   const moveTo = (x, z) => {
     targetRef.current = [x, 0, z];
+    input.current.target = targetRef.current;
     movingToTarget.current = true;
-    socket.emit("move", { ...input.current, target: targetRef.current });
+    const rot = calcRotation();
+    rotationRef.current = rot;
+    setRotationY(rot);
+    socket.emit("move", { ...input.current, target: targetRef.current, rotation: rot });
   };
 
   return { input, animation, rotationY, updateLocalPosition, positionRef, moveTo };

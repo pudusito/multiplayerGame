@@ -42,7 +42,7 @@ export default function App() {
               {/* Botón de salir */}
               <button
                 onClick={() => setGameState("start")}
-                className="fixed top-4 left-4 z-[1000] rounded-full bg-teal-500 border-none shadow-md
+                className="fixed top-4 left-4 z-1000 rounded-full bg-teal-500 border-none shadow-md
                            w-14 h-9 text-xs md:w-18 md:h-11 md:text-base font-bold text-white cursor-pointer"
               >
                 Exit game

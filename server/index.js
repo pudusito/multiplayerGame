@@ -53,12 +53,30 @@ setInterval(() => {
     if (input.left)     char.position[0] -= SPEED;
     if (input.right)    char.position[0] += SPEED;
 
-    // --- Movimiento hacia target ---
+    // --- Movimiento hacia target (click) ---
     if (input.target) {
       char.position = moveTowards(char.position, input.target, SPEED);
       const dx = char.position[0] - input.target[0];
       const dz = char.position[2] - input.target[2];
       if (Math.sqrt(dx*dx + dz*dz) < SPEED) input.target = null;
+    }
+
+    // --- Rotación: mantener última orientación válida ---
+    if (input.target) {
+      const dx = input.target[0] - char.position[0];
+      const dz = input.target[2] - char.position[2];
+      if (dx !== 0 || dz !== 0) {
+        char.rotation = Math.atan2(dx, dz);
+        updated = true;
+      }
+    } else {
+      const mx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+      const mz = (input.backward ? 1 : 0) - (input.forward ? 1 : 0);
+      if (mx !== 0 || mz !== 0) {
+        char.rotation = Math.atan2(mx, mz);
+        updated = true;
+      }
+      // si no hay movimiento, conservamos char.rotation
     }
 
     // --- Salto ---
@@ -104,6 +122,7 @@ io.on("connection", (socket) => {
   const newChar = {
     id: socket.id,
     position: generateRandomPosition(),
+    rotation: 0,
     hairColor: generateRandomHexColor(),
     topColor: generateRandomHexColor(),
     bottomColor: generateRandomHexColor(),
@@ -115,14 +134,21 @@ io.on("connection", (socket) => {
   };
   characters.push(newChar);
 
-  socket.emit("welcome");
+  socket.emit("welcome", { id: socket.id }); // Enviamos id al cliente
   io.emit("characters", characters);
 
   socket.on("move", (input) => {
     const character = characters.find(c => c.id === socket.id);
     if (!character) return;
 
-    character.input = { ...character.input, ...input }; // Guardamos input y target/jump
+    // Guardamos input y target/jump
+    character.input = { ...character.input, ...input }; 
+
+    // Guardamos rotación si viene dada
+    if (typeof input.rotation === "number") {
+     character.rotation = input.rotation;
+    }
+
   });
 
   socket.on("disconnect", () => {
