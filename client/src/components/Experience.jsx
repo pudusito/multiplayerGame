@@ -1,7 +1,6 @@
 import { ContactShadows, OrbitControls, useCursor } from "@react-three/drei";
 import { useState } from "react";
 import { useAtom } from "jotai";
-import { Physics } from "@react-three/rapier";
 
 import { Ground } from "./terrain/Ground";
 import { Map } from "./terrain/Map";
@@ -39,9 +38,8 @@ export const Experience = () => {
       <ambientLight intensity={1} />
       <ContactShadows blur={2} />
 
-      <Physics gravity={[0, -9.81, 0]}>
         <Ground />
-{/*         <Map /> */}
+      {/*   <Map /> */}
 
         {characters.map((char) => {
           // Calcular rotación local
@@ -71,7 +69,7 @@ export const Experience = () => {
             </group>
           );
         })}
-      </Physics>
+
     </>
   );
 };

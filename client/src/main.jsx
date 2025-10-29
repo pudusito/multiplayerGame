@@ -33,7 +33,9 @@ npm install @react-three/rapier (fisicas modernas)
 npm install @react-three/rapier@latest
 
 npm install @dimforge/rapier3d-compat
+npm install @dimforge/rapier3d-compat@0.15.0 --save
 
+npm dedupe(evita duplicados en las dependencias)
 
 -------------------------------------------------------------------------------------------------------------------
                     #Theatre.js

@@ -2,8 +2,9 @@ import { Suspense, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Experience } from "./components/Experience";
 import { SocketManager } from "./components/conection/SocketManager";
-import { KeyboardControls } from "@react-three/drei";
+import { KeyboardControls , Stats } from "@react-three/drei";
 import UI from "./components/UI";
+import { Physics } from "@react-three/rapier";
 // ...existing code...
 
 const keyboardMap = [
@@ -51,8 +52,11 @@ export default function App() {
                 <SocketManager />
                 <Canvas shadows camera={{ position: [8, 8, 8], fov: 30 }} style={{ touchAction: "none" }}>
                 <Suspense fallback={null}>
+                  <Physics gravity={[0, -9.81, 0]} debug={true}>
                   <Experience />
+                  </Physics>
                 </Suspense >
+                <Stats />
                 </Canvas>
               </KeyboardControls>
             </>
