@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { socket } from "../conection/SocketManager";
+import { Socket } from "../conection/SocketConnection";
 
 export const usePlayerInput = () => {
   const input = useRef({
@@ -68,7 +68,7 @@ export const usePlayerInput = () => {
         setRotationY(rot);
         targetRef.current = null;
         input.current.target = null;
-        socket.emit("move", { ...input.current, target: null, rotation: rot });
+        Socket.emit("move", { ...input.current, target: null, rotation: rot });
         movingToTarget.current = false;
       }
     };
@@ -87,7 +87,7 @@ export const usePlayerInput = () => {
         const rot = calcRotation();
         rotationRef.current = rot;
         setRotationY(rot);
-        socket.emit("move", { ...input.current, target: null, rotation: rot });
+        Socket.emit("move", { ...input.current, target: null, rotation: rot });
       }
     };
 
@@ -178,7 +178,7 @@ export const usePlayerInput = () => {
     const rot = calcRotation();
     rotationRef.current = rot;
     setRotationY(rot);
-    socket.emit("move", { ...input.current, target: targetRef.current, rotation: rot });
+    Socket.emit("move", { ...input.current, target: targetRef.current, rotation: rot });
   };
 
   return { input, animation, rotationY, updateLocalPosition, positionRef, moveTo };

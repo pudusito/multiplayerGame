@@ -1,13 +1,26 @@
 import { RigidBody } from "@react-three/rapier";
-import { useState } from "react";
-import { socket } from "../conection/SocketManager";
+import { useState, useEffect } from "react";
+import { Socket } from "../conection/SocketConnection";
 
 export const Ground = ({ size = [50, 1, 50], position = [0, -1, 0] }) => {
   const [onFloor, setOnFloor] = useState(false);
+  const [_cameraFollow, setCameraFollow] = useState();
+
+  // Opcional: suscribirse a cambios de modo de cámara para actualizar UI si hace falta
+  useEffect(() => {
+    const handler = (e) => {
+      setCameraFollow(Boolean(e.detail?.isFollowing));
+    };
+    window.addEventListener("cameraModeChanged", handler);
+    return () => window.removeEventListener("cameraModeChanged", handler);
+  }, []);
 
   const handleClick = (e) => {
+    // Si la cámara está en modo libre (isFollowing === false) ignoramos clicks de movimiento
+    if (window.__cameraIsFollowing === false) return;
+
     const { x, z } = e.point;
-    socket.emit("move", {
+    Socket.emit("move", {
       forward: false,
       backward: false,
       left: false,
@@ -32,3 +45,5 @@ export const Ground = ({ size = [50, 1, 50], position = [0, -1, 0] }) => {
     </RigidBody>
   );
 };
+
+export default Ground;
