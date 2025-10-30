@@ -8,22 +8,18 @@ export const SocketManager = () => {
   const [_myId, setMyId] = useAtom(myIdAtom);
 
   useEffect(() => {
-    console.log('[SocketManager] mounted, socket.connected:', Socket.connected, 'socket.id:', Socket.id);
 
     const onConnect = () => {
       console.log('[Socket] connect', Socket.id);
       if (Socket.id) setMyId(Socket.id);
     };
-    
     const onDisconnect = (reason) => console.log('[Socket] disconnect', reason);
 
-
+    
     const onWelcome = (data) => {
       console.log('[Socket] welcome', data);
       setMyId(data.id);
     };
-
-
     const onCharacters = (value) => {
       setCharacters(value);
       // Inferir myId si no está fijado y el socket.id coincide con algún character

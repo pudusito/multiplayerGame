@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Socket } from "../conection/SocketConnection";
 
+
 export const usePlayerInput = () => {
   const input = useRef({
     forward: false,
@@ -12,7 +13,6 @@ export const usePlayerInput = () => {
     target: null,
   });
 
-
   const [animation, setAnimation] = useState("CharacterArmature|Idle");
   const [rotationY, setRotationY] = useState(0);
 
@@ -20,28 +20,23 @@ export const usePlayerInput = () => {
   const RUN_SPEED = 0.1;
   const JUMP_SPEED = 0.15;
   const GRAVITY = -0.005;
+
   // --- Estado de posición y rotación ---
   const positionRef = useRef([0, 0, 0]);
   const rotationRef = useRef(0);
+
   // --- Estado de salto ---
   const velocityY = useRef(0);
   const isGrounded = useRef(true);
+
   // --- Movimiento hacia click ---
   const targetRef = useRef(null);
   const movingToTarget = useRef(false);
 
-  // Utilidad para calcular orientación deseada
-  const calcRotation = () => {
-    if (targetRef.current) {
-      const dx = targetRef.current[0] - positionRef.current[0];
-      const dz = targetRef.current[2] - positionRef.current[2];
-      if (dx !== 0 || dz !== 0) return Math.atan2(dx, dz);
-    }
-    const mx = (input.current.right ? 1 : 0) - (input.current.left ? 1 : 0);
-    const mz = (input.current.backward ? 1 : 0) - (input.current.forward ? 1 : 0);
-    if (mx !== 0 || mz !== 0) return Math.atan2(mx, mz);
-    return rotationRef.current; // última orientación válida
-  };
+  // --- Utilidad: convención consistente con el servidor ---
+  // rotation = Math.atan2(dx, dz)  (0 -> +Z)
+  const forwardFromYaw = (yaw) => [Math.sin(yaw), Math.cos(yaw)]; // [x,z]
+  const rightFromYaw = (yaw) => [Math.cos(yaw), -Math.sin(yaw)]; // [x,z]
 
   // --- Captura de teclas ---
   useEffect(() => {
@@ -61,15 +56,25 @@ export const usePlayerInput = () => {
           break;
       }
 
-      // Emitir estado si hubo cambios
       if (changed) {
-        const rot = calcRotation();
-        rotationRef.current = rot;
-        setRotationY(rot);
+        // al presionar teclas, cancelamos target (movimiento por click)
         targetRef.current = null;
         input.current.target = null;
-        Socket.emit("move", { ...input.current, target: null, rotation: rot });
-        movingToTarget.current = false;
+
+        // calculamos nueva rotación según el input local
+        const localX = (input.current.right ? 1 : 0) - (input.current.left ? 1 : 0);
+        const localZ = (input.current.backward ? 1 : 0) - (input.current.forward ? 1 : 0);
+
+        if (localX !== 0 || localZ !== 0) {
+          const rot = Math.atan2(localX, localZ); // misma convención que servidor
+          rotationRef.current = rot;
+          setRotationY(rot);
+          Socket.emit("move", { ...input.current, target: null, rotation: rot });
+          movingToTarget.current = false;
+        } else {
+          // si no hay direccional, enviamos solo input sin rot
+          Socket.emit("move", { ...input.current, target: null, rotation: rotationRef.current });
+        }
       }
     };
 
@@ -84,10 +89,17 @@ export const usePlayerInput = () => {
         case " ": input.current.jump = false; changed = true; break;
       }
       if (changed) {
-        const rot = calcRotation();
-        rotationRef.current = rot;
-        setRotationY(rot);
-        Socket.emit("move", { ...input.current, target: null, rotation: rot });
+        // recalculamos rot si queda nuevo input direccional
+        const localX = (input.current.right ? 1 : 0) - (input.current.left ? 1 : 0);
+        const localZ = (input.current.backward ? 1 : 0) - (input.current.forward ? 1 : 0);
+        if (localX !== 0 || localZ !== 0) {
+          const rot = Math.atan2(localX, localZ);
+          rotationRef.current = rot;
+          setRotationY(rot);
+          Socket.emit("move", { ...input.current, target: null, rotation: rot });
+        } else {
+          Socket.emit("move", { ...input.current, target: null, rotation: rotationRef.current });
+        }
       }
     };
 
@@ -118,26 +130,64 @@ export const usePlayerInput = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // --- Actualización de posición local (predicción opcional) ---
+  // --- updateLocalPosition: ahora rota el vector local por rotationRef (yaw) ---
+  // deltaTime en segundos (por ejemplo, ms*0.001)
   const updateLocalPosition = (deltaTime) => {
-    let dx = 0, dz = 0;
     const SPEED = input.current.run ? RUN_SPEED : WALK_SPEED;
 
-    if (input.current.forward) dz -= SPEED * deltaTime;
-    if (input.current.backward) dz += SPEED * deltaTime;
-    if (input.current.left) dx -= SPEED * deltaTime;
-    if (input.current.right) dx += SPEED * deltaTime;
+    // 1) vector local (forward = -Z local convention used earlier)
+    let localX = 0;
+    let localZ = 0;
+    if (input.current.forward) localZ -= 1;
+    if (input.current.backward) localZ += 1;
+    if (input.current.left) localX -= 1;
+    if (input.current.right) localX += 1;
 
-    // Movimiento hacia click
+    // 2) movimiento resultante en mundo
+    let moveX = 0;
+    let moveZ = 0;
+
+    // Si hay input de teclas => rotar el vector local por rotationRef
+    if (localX !== 0 || localZ !== 0) {
+      const len = Math.sqrt(localX * localX + localZ * localZ);
+      const nx = localX / len;
+      const nz = localZ / len;
+
+      const yaw = rotationRef.current; // yaw en radianes, convención: 0 -> +Z
+      // forward vector (x,z) = [sin(yaw), cos(yaw)]
+      // right vector (x,z)   = [cos(yaw), -sin(yaw)]
+      const forward = forwardFromYaw(yaw);
+      const right = rightFromYaw(yaw);
+
+      // combina localZ * forward + localX * right
+      moveX += (nz * forward[0] + nx * right[0]) * SPEED * deltaTime;
+      moveZ += (nz * forward[1] + nx * right[1]) * SPEED * deltaTime;
+
+      // actualizar rotación para mirar hacia la dirección del movimiento local
+      const desiredRot = Math.atan2(nx, nz);
+      rotationRef.current = desiredRot;
+      setRotationY(desiredRot);
+      Socket.emit("move", { ...input.current, target: null, rotation: desiredRot });
+      movingToTarget.current = false;
+    }
+
+    // 3) Movimiento hacia target (click) — world-space
     if (targetRef.current) {
       const pos = positionRef.current;
       const dirX = targetRef.current[0] - pos[0];
       const dirZ = targetRef.current[2] - pos[2];
       const dist = Math.sqrt(dirX * dirX + dirZ * dirZ);
       if (dist > 0.05) {
-        dx += (dirX / dist) * SPEED * deltaTime;
-        dz += (dirZ / dist) * SPEED * deltaTime;
+        const nx = dirX / dist;
+        const nz = dirZ / dist;
+        moveX += nx * SPEED * deltaTime;
+        moveZ += nz * SPEED * deltaTime;
         movingToTarget.current = true;
+
+        const rot = Math.atan2(dirX, dirZ);
+        rotationRef.current = rot;
+        setRotationY(rot);
+        Socket.emit("move", { ...input.current, target: targetRef.current, rotation: rot });
       } else {
         movingToTarget.current = false;
         targetRef.current = null;
@@ -145,28 +195,26 @@ export const usePlayerInput = () => {
       }
     }
 
-    positionRef.current[0] += dx;
-    positionRef.current[2] += dz;
+    // 4) aplicar movimiento al world position
+    positionRef.current[0] += moveX;
+    positionRef.current[2] += moveZ;
 
-    // --- Salto ---
+    // --- salto y gravedad (sin cambios) ---
     if (input.current.jump && isGrounded.current) {
       velocityY.current = JUMP_SPEED;
       isGrounded.current = false;
-      input.current.jump = false; // consumimos salto
+      input.current.jump = false;
     }
     velocityY.current += GRAVITY * deltaTime;
     positionRef.current[1] += velocityY.current;
-
     if (positionRef.current[1] <= 0) {
       positionRef.current[1] = 0;
       velocityY.current = 0;
       isGrounded.current = true;
     }
 
-    // --- Rotación (mantener la última si no hay input) ---
-    const rot = calcRotation();
-    rotationRef.current = rot;
-    setRotationY(rot);
+    // mantener state rotationY sincronizado
+    setRotationY(rotationRef.current);
 
     return positionRef.current;
   };
@@ -175,7 +223,7 @@ export const usePlayerInput = () => {
     targetRef.current = [x, 0, z];
     input.current.target = targetRef.current;
     movingToTarget.current = true;
-    const rot = calcRotation();
+    const rot = Math.atan2(x - positionRef.current[0], z - positionRef.current[2]); // same conv
     rotationRef.current = rot;
     setRotationY(rot);
     Socket.emit("move", { ...input.current, target: targetRef.current, rotation: rot });

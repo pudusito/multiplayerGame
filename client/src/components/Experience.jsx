@@ -18,8 +18,8 @@ export const Experience = () => {
   const playerRef = useRef(null);
 
   useEffect(() => {
-    console.log('[Experience] myId:', myId, 'characters.length:', characters.length);
-  }, [myId, characters.length]);
+    console.log('Conectado con el id:', myId);
+  }, [myId]);
 
   const [onFloor, _setOnFloor] = useState(false);
   useCursor(onFloor);

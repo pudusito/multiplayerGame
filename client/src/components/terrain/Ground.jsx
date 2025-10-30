@@ -4,7 +4,8 @@ import { Socket } from "../conection/SocketConnection";
 
 export const Ground = ({ size = [50, 1, 50], position = [0, -1, 0] }) => {
   const [onFloor, setOnFloor] = useState(false);
-  // inicializar leyendo la variable global (no provoca side-effect)
+
+  // Estado que refleja si la cámara sigue al jugador o no
   const [_cameraFollow, setCameraFollow] = useState(() => window.__cameraIsFollowing ?? true);
 
   useEffect(() => {
@@ -16,7 +17,7 @@ export const Ground = ({ size = [50, 1, 50], position = [0, -1, 0] }) => {
   }, []);
 
   const handleClick = (e) => {
-    // Si la cámara está en modo libre (isFollowing === false) ignoramos clicks de movimiento
+    // 🔹 Si la cámara está en modo libre, no permitimos movimiento por click
     if (window.__cameraIsFollowing === false) return;
 
     const { x, z } = e.point;
@@ -26,8 +27,17 @@ export const Ground = ({ size = [50, 1, 50], position = [0, -1, 0] }) => {
       left: false,
       right: false,
       run: false,
-      target: [x, 0, z], // Movimiento hacia click
+      target: [x, 0, z],
     });
+  };
+
+  // 🔹 Si la cámara está en modo follow, desactivamos el hover visual
+  const handlePointerEnter = () => {
+    if (!_cameraFollow) setOnFloor(true);
+  };
+
+  const handlePointerLeave = () => {
+    if (!_cameraFollow) setOnFloor(false);
   };
 
   return (
@@ -36,8 +46,8 @@ export const Ground = ({ size = [50, 1, 50], position = [0, -1, 0] }) => {
         position={position}
         receiveShadow
         onClick={handleClick}
-        onPointerEnter={() => setOnFloor(true)}
-        onPointerLeave={() => setOnFloor(false)}
+        onPointerEnter={handlePointerEnter}
+        onPointerLeave={handlePointerLeave}
       >
         <boxGeometry args={size} />
         <meshStandardMaterial color={onFloor ? "lightgreen" : "green"} />

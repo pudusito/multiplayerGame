@@ -7,14 +7,14 @@ export function ThirdPersonCamera({
   playerRef,
   targetRef,
   follow = true,
-  offset = [0, 30, -6],
+  offset = [0, 5, 10],
   lookAtOffset = [0, 1.2, 0],
   positionLerp = 0.12,
   rotationLerp = 0.12,
   enableZoom = true,
   zoomSpeed = 0.5,
-  globalYaw = -Math.PI / 4,
-  pitch = Math.PI / 5.5,
+  globalYaw = Math.PI, // mirar hacia -Z por defecto
+  pitch = Math.PI / 6,
   toggleKey = "c",
 }) {
   const actualTargetRef = targetRef || playerRef;
