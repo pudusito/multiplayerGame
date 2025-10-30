@@ -12,8 +12,6 @@ export function ThirdPersonCamera({
   positionLerp = 0.12,
   rotationLerp = 0.12,
   enableZoom = true,
-  minDistance = 2,
-  maxDistance = 30,
   zoomSpeed = 0.5,
   globalYaw = -Math.PI / 4,
   pitch = Math.PI / 5.5,
@@ -31,9 +29,10 @@ export function ThirdPersonCamera({
   const [isFollowing, setIsFollowing] = useState(follow);
   useEffect(() => setIsFollowing(follow), [follow]);
 
-  // exponer estado para que Ground u otros componentes puedan consultarlo
+  // publicar el estado de la cámara y lanzar evento SOLO desde useEffect (post-render)
   useEffect(() => {
     window.__cameraIsFollowing = isFollowing;
+    window.dispatchEvent(new CustomEvent("cameraModeChanged", { detail: { isFollowing } }));
   }, [isFollowing]);
 
   const distanceRef = useRef(Math.abs(offset[2] || -6));
@@ -47,39 +46,71 @@ export function ThirdPersonCamera({
     distanceRef.current = Math.abs(offset[2] || -6);
   }, [offset]);
 
-  // wheel zoom modifies distanceRef (used by follow offset); OrbitControls handles zoom in free mode
+  // wheel zoom modifies distanceRef (used by follow offset); OrbitControls handles zoom in free mode by default
   useEffect(() => {
     if (!enableZoom) return;
     const onWheel = (e) => {
       const delta = Math.sign(e.deltaY) * zoomSpeed;
-      distanceRef.current = THREE.MathUtils.clamp(
-        distanceRef.current + delta,
-        minDistance,
-        maxDistance
-      );
+      // sin clamp: solo evitar valores demasiado pequeños
+      distanceRef.current = Math.max(0.5, distanceRef.current + delta);
     };
     window.addEventListener("wheel", onWheel, { passive: true });
     return () => window.removeEventListener("wheel", onWheel);
-  }, [enableZoom, zoomSpeed, minDistance, maxDistance]);
+  }, [enableZoom, zoomSpeed]);
 
-  // toggle key: actualiza estado local, expone variable global y lanza evento custom
+  // toggle key: SOLO actualiza el estado local; el efecto anterior publicará el cambio
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key.toLowerCase() === String(toggleKey).toLowerCase()) {
-        setIsFollowing((prev) => {
-          const next = !prev;
-          window.__cameraIsFollowing = next;
-          window.dispatchEvent(new CustomEvent("cameraModeChanged", { detail: { isFollowing: next } }));
-          return next;
-        });
+        setIsFollowing((prev) => !prev);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [toggleKey]);
 
+  // inicializar la cámara en la posición "follow" al montar si follow === true
+  useEffect(() => {
+    const init = () => {
+      if (!actualTargetRef?.current) return;
+      actualTargetRef.current.getWorldPosition(tmpVector.current);
+
+      const behindZ = -Math.abs(distanceRef.current);
+      const rawOffset = new THREE.Vector3(offset[0], 0, behindZ).applyQuaternion(cameraQuat.current);
+      const y = tmpVector.current.y + offset[1];
+
+      desiredPosition.current.set(
+        tmpVector.current.x + rawOffset.x,
+        y,
+        tmpVector.current.z + rawOffset.z
+      );
+
+      desiredLookAt.current.set(
+        tmpVector.current.x + lookAtOffset[0],
+        tmpVector.current.y + lookAtOffset[1],
+        tmpVector.current.z + lookAtOffset[2]
+      );
+
+      if (follow) {
+        camera.position.copy(desiredPosition.current);
+        camera.lookAt(desiredLookAt.current);
+        fixedY.current = desiredPosition.current.y;
+      }
+
+      if (orbitRef.current) {
+        orbitRef.current.target.copy(desiredLookAt.current);
+        orbitRef.current.update();
+        orbitRef.current.enabled = !isFollowing;
+      }
+    };
+
+    const t = setTimeout(init, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // solo al montar
+
   // al cambiar a modo libre: centramos el pivot de OrbitControls sobre el personaje
-  // NO sobrescribimos camera.position para conservar la última posición visible
+  // NO sobrescribimos camera.position para conservar la última posición visible al hacer toggle
   useEffect(() => {
     if (!orbitRef.current) return;
 
@@ -102,15 +133,13 @@ export function ThirdPersonCamera({
         tmpVector.current.z + lookAtOffset[2]
       );
 
-      // solo colocamos el pivot/target del OrbitControls para que las rotaciones
-      // libres ocurran alrededor del personaje; la cámara se mantiene en su última transform
+      // centrar pivot sin tocar la cámara (la cámara mantendrá su última transform)
       orbitRef.current.target.copy(desiredLookAt.current);
       orbitRef.current.update();
       orbitRef.current.enabled = true;
       return;
     }
 
-    // volver a follow: desactivar orbit para que la lógica de follow controle la cámara
     if (isFollowing) {
       orbitRef.current.enabled = false;
     }
@@ -119,7 +148,6 @@ export function ThirdPersonCamera({
   useFrame(() => {
     if (!actualTargetRef?.current) return;
 
-    // obtener posición del personaje
     actualTargetRef.current.getWorldPosition(tmpVector.current);
 
     const behindZ = -Math.abs(distanceRef.current);
@@ -141,7 +169,6 @@ export function ThirdPersonCamera({
     );
 
     if (isFollowing) {
-      // follow mode: lerp hacia desired position/lookAt
       if (orbitRef.current) orbitRef.current.enabled = false;
 
       camera.position.lerp(desiredPosition.current, positionLerp);
@@ -152,7 +179,6 @@ export function ThirdPersonCamera({
       return;
     }
 
-    // free mode: mantener pivot centrado (suavizado) y dejar OrbitControls manejar la cámara
     if (orbitRef.current) {
       orbitRef.current.target.lerp(desiredLookAt.current, 0.35);
       orbitRef.current.update();
@@ -172,8 +198,6 @@ export function ThirdPersonCamera({
       enableZoom={true}
       enableRotate={true}
       enabled={!isFollowing}
-      minDistance={minDistance}
-      maxDistance={maxDistance}
     />
   );
 }

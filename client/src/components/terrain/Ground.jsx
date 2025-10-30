@@ -4,9 +4,9 @@ import { Socket } from "../conection/SocketConnection";
 
 export const Ground = ({ size = [50, 1, 50], position = [0, -1, 0] }) => {
   const [onFloor, setOnFloor] = useState(false);
-  const [_cameraFollow, setCameraFollow] = useState();
+  // inicializar leyendo la variable global (no provoca side-effect)
+  const [_cameraFollow, setCameraFollow] = useState(() => window.__cameraIsFollowing ?? true);
 
-  // Opcional: suscribirse a cambios de modo de cámara para actualizar UI si hace falta
   useEffect(() => {
     const handler = (e) => {
       setCameraFollow(Boolean(e.detail?.isFollowing));
