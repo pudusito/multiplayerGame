@@ -4,9 +4,9 @@ import { useAtom } from "jotai";
 
 import { Ground } from "./terrain/Ground";
 import { Map } from "./terrain/Map";
-import { Model } from "./character/AnimatedWoman";
+import { Model } from "./character/Model";
 import { characterAtom, myIdAtom, mapAtom } from "./conection/SocketConnection";
-import { usePlayerInput } from "./character/Movement";
+import { usePlayerInput } from "./character/CharacterController.jsx";
 import { ThirdPersonCamera } from "./character/CameraControl";
 import Item from "./items/items.jsx";
 

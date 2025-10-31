@@ -2,7 +2,7 @@ src/
 └─ components/
    ├─ character/
    │  ├─ CameraController.jsx   ← cámara que sigue al personaje
-   │  ├─ Character.jsx          ← modelo 3D del personaje (sin cambios)
+   │  ├─ Model.jsx          ← modelo 3D del personaje (sin cambios)
    │  ├─ CharacterController.jsx← RigidBody + Character + hook de controles
    |
    ├─ terrain/

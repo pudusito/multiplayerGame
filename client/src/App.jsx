@@ -3,7 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { Experience } from "./components/Experience";
 import { SocketManager } from "./components/conection/SocketManager";
 import { KeyboardControls , Stats } from "@react-three/drei";
-import UI from "./components/UI";
+import HUD from "./components/ui/HUD";
 import { Physics } from "@react-three/rapier";
 // ...existing code...
 
@@ -42,7 +42,7 @@ export default function App() {
                 Exit game
               </button>
 
-              <UI />
+              <HUD />
               
               <KeyboardControls map={keyboardMap}>
                 <SocketManager />

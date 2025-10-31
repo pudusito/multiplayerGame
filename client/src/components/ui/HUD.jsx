@@ -1,6 +1,6 @@
 import React from "react";
 
-export default function UI({ health = 100, stamina = 100 }) {
+export default function HUD({ health = 100, stamina = 100 }) {
   return (
     <div className="fixed bottom-4 left-4 bg-black bg-opacity-50 text-white p-4 rounded-md z-50 w-64 space-y-3 font-sans">
       <h2 className="text-lg font-bold">Mini HUD</h2>
