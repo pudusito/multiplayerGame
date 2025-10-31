@@ -7,7 +7,7 @@ export function ThirdPersonCamera({
   playerRef,
   targetRef,
   follow = true,
-  offset = [0, 50, 20],
+  offset = [0, 10, 20],
   lookAtOffset = [0, 1.2, 0],
   positionLerp = 0.12,
   rotationLerp = 0.12,

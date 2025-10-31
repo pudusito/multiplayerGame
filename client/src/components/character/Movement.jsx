@@ -16,10 +16,10 @@ export const usePlayerInput = () => {
   const [animation, setAnimation] = useState("CharacterArmature|Idle");
   const [rotationY, setRotationY] = useState(0);
 
-  const WALK_SPEED = 0.05;
-  const RUN_SPEED = 0.1;
-  const JUMP_SPEED = 0.15;
-  const GRAVITY = -0.005;
+  const WALK_SPEED = 0.1;
+  const RUN_SPEED = 0.5;
+  const JUMP_SPEED = 0.9;
+  const GRAVITY = -0.10;
 
   // --- Estado de posición y rotación ---
   const positionRef = useRef([0, 0, 0]);

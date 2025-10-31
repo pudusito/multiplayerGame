@@ -8,8 +8,11 @@ io.listen(3001);
 
 const characters = [];
 const WALK_SPEED = 0.1;
-const RUN_SPEED = 0.2;
-const JUMP_VELOCITY = 0.5;
+const RUN_SPEED = 0.5;
+const JUMP_VELOCITY = 0.9;
+const GRAVITY = -0.10;
+
+const MAP_LIMIT= 20;
 
 const items= {
   table: {
@@ -43,8 +46,7 @@ const map = {
   ]
 }
 
-const MAP_LIMIT= 20;
-const GRAVITY = -0.10;
+
 
 function generateRandomPosition() {
   return [Math.random() * map.size[0], 0, Math.random() * map.size[1]];
