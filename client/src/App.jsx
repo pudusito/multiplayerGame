@@ -26,11 +26,8 @@ export default function App() {
           {/* ---------- PANTALLA DE INICIO ---------- */}
           {gameState === "start" && (
             <div className="fixed inset-0 flex flex-col items-center justify-center bg-black text-white z-50">
-              <h1 className="text-4xl font-bold mb-6">🚗 Pudu Racing</h1>
-              <button
-                onClick={() => setGameState("playing")}
-                className="px-6 py-3 bg-green-500 rounded-lg hover:bg-green-700 transition"
-              >
+              <button onClick={() => setGameState("playing")}
+                      className="px-6 py-3 bg-green-500 rounded-lg hover:bg-green-700 transition">
                 Start Game
               </button>
             </div>
@@ -40,20 +37,19 @@ export default function App() {
           {gameState === "playing" && (
             <>
               {/* Botón de salir */}
-              <button
-                onClick={() => setGameState("start")}
-                className="fixed top-4 left-4 z-1000 rounded-full bg-teal-500 border-none shadow-md
-                           w-14 h-9 text-xs md:w-18 md:h-11 md:text-base font-bold text-white cursor-pointer"
-              >
+              <button onClick={() => setGameState("start")}
+                      className="fixed top-2 right-2 z-1000 rounded-full bg-teal-500 border-none shadow-md font-bold text-white cursor-pointer" >
                 Exit game
               </button>
+
               <UI />
+              
               <KeyboardControls map={keyboardMap}>
                 <SocketManager />
                 <Canvas shadows camera={{ position: [8, 8, 8], fov: 30 }} style={{ touchAction: "none" }}>
                 <Suspense fallback={null}>
                   <Physics gravity={[0, -9.81, 0]} debug={true}>
-                  <Experience />
+                    <Experience />
                   </Physics>
                 </Suspense >
                 <Stats />

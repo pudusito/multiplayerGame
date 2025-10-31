@@ -1,24 +1,28 @@
 // ...existing code...
 import { useEffect } from 'react';
-import { useAtom } from 'jotai';
-import { Socket, characterAtom, myIdAtom } from "./SocketConnection.js";
+import { useAtom, } from 'jotai';
+import { Socket, characterAtom, myIdAtom, mapAtom} from "./SocketConnection.js";
 
 export const SocketManager = () => {
   const [_characters, setCharacters] = useAtom(characterAtom);
   const [_myId, setMyId] = useAtom(myIdAtom);
+  
+  const [_mapAtom, setMap] = useAtom(mapAtom);
 
   useEffect(() => {
-
     const onConnect = () => {
-      console.log('[Socket] connect', Socket.id);
+      console.log('connect', Socket.id, { connected: Socket.connected });
       if (Socket.id) setMyId(Socket.id);
     };
-    const onDisconnect = (reason) => console.log('[Socket] disconnect', reason);
+    const onDisconnect = (reason) => console.log('disconnect', reason);
 
     
-    const onWelcome = (data) => {
-      console.log('[Socket] welcome', data);
-      setMyId(data.id);
+    const onWelcome = (value) => {
+      console.log('welcome', value);
+      setCharacters(value.characters);
+      setMyId(value.id);
+      setMap(value.map);
+
     };
     const onCharacters = (value) => {
       setCharacters(value);
@@ -26,7 +30,7 @@ export const SocketManager = () => {
       if (!_myId && Socket.id) {
         const found = value.find((c) => String(c.id) === String(Socket.id));
         if (found) {
-          console.log('[SocketManager] inferred myId from characters:', found.id);
+          console.log('inferred myId from characters:', found.id);
           setMyId(found.id);
         }
       }
@@ -41,6 +45,7 @@ export const SocketManager = () => {
     if (Socket.connected && Socket.id) {
       setMyId(Socket.id);
     }
+    Socket.connect();
 
     return () => {
       Socket.off('connect', onConnect);
@@ -48,7 +53,7 @@ export const SocketManager = () => {
       Socket.off('welcome', onWelcome);
       Socket.off('characters', onCharacters);
     };
-  }, [setCharacters, setMyId, _myId]);
+  }, [setCharacters, setMyId, setMap ,_myId]);
 
   return null;
 };

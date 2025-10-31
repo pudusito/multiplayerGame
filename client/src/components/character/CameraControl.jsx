@@ -7,11 +7,11 @@ export function ThirdPersonCamera({
   playerRef,
   targetRef,
   follow = true,
-  offset = [0, 5, 10],
+  offset = [0, 50, 20],
   lookAtOffset = [0, 1.2, 0],
   positionLerp = 0.12,
   rotationLerp = 0.12,
-  enableZoom = true,
+  enableZoom = false,
   zoomSpeed = 0.5,
   globalYaw = Math.PI, // mirar hacia -Z por defecto
   pitch = Math.PI / 6,

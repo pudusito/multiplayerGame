@@ -1,12 +1,13 @@
 import { RigidBody } from "@react-three/rapier";
 import { useState, useEffect } from "react";
-import { Socket } from "../conection/SocketConnection";
+import { Socket} from "../conection/SocketConnection";
 
-export const Ground = ({ size = [50, 1, 50], position = [0, -1, 0] }) => {
+
+export const Ground = ({map, position=[0,-1,0]}) => {
+
+ /*  const [map] = useAtom(mapAtom); Obtener el mapa desde el átomo Jotai, pero tambien podemos pasarlo como prop desde experience, ya que renderiza ground */
   const [onFloor, setOnFloor] = useState(false);
-
-  // Estado que refleja si la cámara sigue al jugador o no
-  const [_cameraFollow, setCameraFollow] = useState(() => window.__cameraIsFollowing ?? true);
+  const [_cameraFollow, setCameraFollow] = useState(() => window.__cameraIsFollowing ?? true);  // Estado que refleja si la cámara sigue al jugador o no
 
   useEffect(() => {
     const handler = (e) => {
@@ -39,6 +40,7 @@ export const Ground = ({ size = [50, 1, 50], position = [0, -1, 0] }) => {
   const handlePointerLeave = () => {
     if (!_cameraFollow) setOnFloor(false);
   };
+  
 
   return (
     <RigidBody type="fixed" colliders="cuboid">
@@ -48,8 +50,9 @@ export const Ground = ({ size = [50, 1, 50], position = [0, -1, 0] }) => {
         onClick={handleClick}
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
+        rotation-x={-Math.PI / 2}
       >
-        <boxGeometry args={size} />
+        <planeGeometry args={map.size} />
         <meshStandardMaterial color={onFloor ? "lightgreen" : "green"} />
       </mesh>
     </RigidBody>

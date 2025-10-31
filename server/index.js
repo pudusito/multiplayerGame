@@ -9,11 +9,45 @@ io.listen(3001);
 const characters = [];
 const WALK_SPEED = 0.1;
 const RUN_SPEED = 0.2;
-const GRAVITY = -0.10;
 const JUMP_VELOCITY = 0.5;
 
+const items= {
+  table: {
+    name: "table",
+    size: [4,4]
+  },
+  chair: {
+    name: "chair",
+    size: [1,1]
+  }
+}
+const map = {
+  size: [50, 50],
+  gridDivision: 5,
+  items: [
+    {
+      ...items.chair,
+      gridPosition: [0,0],
+      rotation: 0,
+    },
+    {
+      ...items.chair,
+      gridPosition: [5,5],
+      rotation: 0,
+    },
+    {
+      ...items.table,
+      gridPosition: [10,10],
+      rotation: 0,
+    }
+  ]
+}
+
+const MAP_LIMIT= 20;
+const GRAVITY = -0.10;
+
 function generateRandomPosition() {
-  return [Math.random() * 3, 0, Math.random() * 3];
+  return [Math.random() * map.size[0], 0, Math.random() * map.size[1]];
 }
 
 function generateRandomHexColor() {
@@ -98,8 +132,8 @@ setInterval(() => {
     }
 
     // --- Limites horizontales ---
-    char.position[0] = Math.max(-10, Math.min(10, char.position[0]));
-    char.position[2] = Math.max(-10, Math.min(10, char.position[2]));
+    char.position[0] = Math.max(-MAP_LIMIT, Math.min(MAP_LIMIT, char.position[0]));
+    char.position[2] = Math.max(-MAP_LIMIT, Math.min(MAP_LIMIT, char.position[2]));
 
     // --- Animación ---
     if (!char.isGrounded) {
@@ -117,7 +151,7 @@ setInterval(() => {
 
 // --- Conexión de clientes ---
 io.on("connection", (socket) => {
-  console.log("Usuario conectado:", socket.id);
+  console.log("Usuario conectado con ID:", socket.id);
 
   const newChar = {
     id: socket.id,
@@ -134,7 +168,11 @@ io.on("connection", (socket) => {
   };
   characters.push(newChar);
 
-  socket.emit("welcome", { id: socket.id }); // Enviamos id al cliente
+  socket.emit("welcome", { id: socket.id,
+                           map,
+                           characters,
+                           items,}); 
+
   io.emit("characters", characters);
 
   socket.on("move", (input) => {
@@ -152,7 +190,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log("Usuario desconectado:", socket.id);
+    console.log("Usuario desconectado con ID:", socket.id);
     const index = characters.findIndex(c => c.id === socket.id);
     if (index !== -1) characters.splice(index, 1);
     io.emit("characters", characters);

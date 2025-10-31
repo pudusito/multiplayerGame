@@ -5,7 +5,7 @@ export default function UI({ health = 100, stamina = 100 }) {
     <div className="fixed bottom-4 left-4 bg-black bg-opacity-50 text-white p-4 rounded-md z-50 w-64 space-y-3 font-sans">
       <h2 className="text-lg font-bold">Mini HUD</h2>
       
-      <p className="text-sm">WASD para mover, SPACE para saltar</p>
+      <p className="text-sm">Keyboard  <br/>  MLB para mover <br/> SPACE para saltar</p>
 
       {/* Barra de vida */}
       <div>
