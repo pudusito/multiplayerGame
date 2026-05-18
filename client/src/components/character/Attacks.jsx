@@ -1,20 +1,42 @@
 // client/src/components/character/Attacks.jsx
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { Socket } from "../../conection/SocketConnection.js";
 
 function Projectile({
-  id, position = [0, 1.6, 0],
+  id, 
+  position = [0, 1.6, 0],
   direction = [0, 0, -1],
-  speed = 20, maxDistance = 30,
-  radius = 0.12, color = "orange",
+  speed = 20, 
+  maxDistance = 30,
+  radius = 0.12, 
+  color = "orange",
   onRemove = () => {}
 }) {
   const mesh = useRef();
   const dir = useRef(new THREE.Vector3().fromArray(direction).normalize());
   const traveled = useRef(0);
   const removed = useRef(false);
+
+    // normalizar direction (acepta array o objeto {x,y,z})
+  useEffect(() => {
+    const toArray = (d) => {
+      if (Array.isArray(d)) return d;
+      if (d && typeof d === "object") return [d.x ?? 0, d.y ?? 0, d.z ?? -1];
+      return [0, 0, -1];
+    };
+    dir.current.fromArray(toArray(direction)).normalize();
+  }, [direction]);
+
+    // fijar posición inicial una sola vez (no usar prop `position` directamente en <mesh>, porque R3F la reescribiría cada render)
+  useEffect(() => {
+    if (!mesh.current) return;
+    if (Array.isArray(position)) mesh.current.position.fromArray(position);
+    else if (position && typeof position === "object")
+      mesh.current.position.set(position.x ?? 0, position.y ?? 0, position.z ?? 0);
+  }, []); // solo al montar
+
 
   useFrame((_, delta) => {
     if (!mesh.current || removed.current) return;
@@ -147,8 +169,8 @@ export default function Attacks({ playerRef, camTargetRef, camera, fireRate = 4,
     if (camera) camera.getWorldDirection(dir);
 
     const target = origin.clone().add(dir.clone().multiplyScalar(20));
-    const meteorStart = target.clone().add(new THREE.Vector3(0, 40, 0));
-    const data = { position: meteorStart.toArray(), direction: [0, -1, 0], speed: 50, maxDistance: 60, radius: 2.5, color: "red", damage: 80, aoe: 5 };
+    const meteorStart = target.clone().add(new THREE.Vector3(0, 45, 0));
+    const data = { position: meteorStart.toArray(), direction: [0, -1, 0], speed: 50, maxDistance: 60, radius: 5, color: "red", damage: 80, aoe: 5 };
     spawnLocal(data);
     if (Socket && Socket.connected) Socket.emit("ability", { abilityId: 4, target: target.toArray() });
   }, [playerRef, camTargetRef, camera, spawnLocal, canUseAbility, markUsed]);

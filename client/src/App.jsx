@@ -137,7 +137,7 @@ export default function App() {
                 >
 
                 <Suspense fallback={<Html><div>Cargando juego...</div></Html>}> {/* puede ser null */}
-                  <Physics gravity={[0, -9.81, 0]} debug={false}> {/* debug true es caro */}
+                  <Physics gravity={[0, -9.81, 0]} debug={true}> {/* debug true es caro */}
                     <Stats /> 
                     <Experience />
                   </Physics>

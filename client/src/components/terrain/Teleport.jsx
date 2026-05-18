@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from "react";
+import React, { useMemo} from "react";
 import { useGLTF, Text } from "@react-three/drei";
 import { SkeletonUtils } from 'three-stdlib'
 import { RigidBody } from "@react-three/rapier";
@@ -13,15 +13,12 @@ function TeleportModel({
     
     const { scene } = useGLTF(src);
     const cloned = useMemo(() => SkeletonUtils.clone(scene), [scene]);
-    const ref = useRef();
 
     return (
         <>     
-            <RigidBody ref={ref} type="fixed" colliders="trimesh">
-                <group rotation={rotation} position={position} scale={scale}>
-                    <primitive object={cloned} dispose={null} />
-                </group>
-            </RigidBody>
+          <group rotation={rotation} position={position} scale={scale}>
+              <primitive object={cloned} dispose={null} />
+          </group>
         </>
     );
 }
@@ -47,24 +44,25 @@ export default function Teleport({ tp }) {
   ];
 
   return (
-    <group position={[p[0], y + 0.03, p[2]]}> 
-        <>
-            <mesh rotation-x={-Math.PI / 2}>
-              <ringGeometry args={[r * 0.55, r, 48]} />
-              <meshStandardMaterial color="#ffffffa9" transparent opacity={0.85} side={2} />
-            </mesh>
+    <>
+      <group position={[p[0], y + 0.03, p[2]]}>
 
-            <mesh position={[0, 0.75, 0]}>
-              <cylinderGeometry args={[r * 0.07, r * 0.07, 1.5, 16]} />
-              <meshStandardMaterial color="#00b7ff" emissive="#91b7ff" emissiveIntensity={1} transparent opacity={0.35} />
-            </mesh>
+        {/* área de activación del teleport */}
+        <mesh position={[0,0,0]}>
+          <boxGeometry args={[r*2, 0.1, r*2]} />
+          <meshBasicMaterial transparent opacity={0} />
+        </mesh>
 
-            <Text position={[0, 3, 0]} fontSize={1} color="#ffffff" anchorX="center" anchorY="bottom">
-              {tp.id}
-            </Text>
+        {/* texto del teleport */}
+        <Text position={[0, 3, 0]} fontSize={1} color="#ffffff" anchorX="center" anchorY="bottom">
+          {tp.id}
+        </Text>
 
+        {/* modelo del teleport con colisiones */}
+        <RigidBody type="fixed" colliders="trimesh">
             <TeleportModel src={tp.model} scale={scaleModel} position={localModelPos} rotation={rotationModel}/>
-        </>
-    </group>
+        </RigidBody>
+      </group>
+    </>
   );
 }

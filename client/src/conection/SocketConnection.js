@@ -157,9 +157,10 @@ disconnect(code = 1000, reason = "client disconnect") {
   }
 }
 
+// Configuración de la conexión WebSocket
 export const Socket = new WebSocketAdapter("ws://localhost:3001/game-connection");
 
 export const characterAtom = atom([]);
 export const myIdAtom = atom(null);
 export const mapAtom = atom(null);
-export const wallsAtom = atom([]);
+export const chunksAtom = atom({});

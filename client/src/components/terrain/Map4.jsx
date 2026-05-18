@@ -1,12 +1,13 @@
-// client/src/components/terrain/Map4.jsx
 import React from "react";
-import GroundBase from "./GroundBase";
+import GroundBase from "./GroundBase.jsx";
 
-export const Map4 = ({ map, ...props }) => {
-
+export const Map4 = ({ map }) => {
   return (
     <>
-      <GroundBase map={map} {...props} />
+      <GroundBase
+        map={map}
+        baseProps={{ position: [0, 0, 0] }}
+      />
     </>
   );
 };

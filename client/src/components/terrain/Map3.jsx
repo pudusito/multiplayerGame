@@ -14,6 +14,8 @@ export const Map3 = ({ model = '/models/maps/map.glb', map = null, position = [0
       if (child.isMesh) {
         child.castShadow = true;
         child.receiveShadow = true;
+        child.userData = child.userData || {};
+        child.userData.hasRigidBody = true;
       }
     });
   }, [scene]);

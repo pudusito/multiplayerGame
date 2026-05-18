@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAtom } from "jotai";
-import { Socket, characterAtom, myIdAtom, mapAtom, wallsAtom } from "./SocketConnection.js";
+import { Socket, characterAtom, myIdAtom, mapAtom, chunksAtom } from "./SocketConnection.js";
 
 const DEFAULT_FLUSH_HZ = 20;
 const MIN_FLUSH_HZ = 10;
@@ -12,24 +12,28 @@ function normalizeHz(value, fallback = DEFAULT_FLUSH_HZ) {
   return Math.max(MIN_FLUSH_HZ, Math.min(MAX_FLUSH_HZ, Math.round(num)));
 }
 
+
 // socketmanager que recibe las actualizaciones del servidor.
 export const SocketManager = ({ name, team }) => {
+
   const [, setCharacters] = useAtom(characterAtom);
   const [, setMyId] = useAtom(myIdAtom);
   const [, setMap] = useAtom(mapAtom);
-  const [, setWalls] = useAtom(wallsAtom);
+  const [, setChunks] = useAtom(chunksAtom);
+
   const bufferRef = useRef({
     characters: null,
-    map: null,
-    walls: null,
     id: null,
+    map: null,
     stateTick: null,
+    chunks: null,
   });
 
   const lastAppliedTickRef = useRef(-1);
   const intervalRef = useRef(null);
   const flushHzRef = useRef(DEFAULT_FLUSH_HZ);
 
+  // Configuración de los eventos del socket
   useEffect(() => {
     if (!name || !team) return undefined;
 
@@ -48,9 +52,9 @@ export const SocketManager = ({ name, team }) => {
         buffer.map = null;
       }
 
-      if (buffer.walls !== null) {
-        setWalls(buffer.walls);
-        buffer.walls = null;
+      if (buffer.chunks !== null) {
+        setChunks(buffer.chunks);
+        buffer.chunks = null;
       }
 
       if (buffer.characters !== null) {
@@ -118,6 +122,7 @@ export const SocketManager = ({ name, team }) => {
     };
 
     const onGameState = (value) => {
+
       if (value && value.characters !== undefined) {
         bufferRef.current.characters = value.characters;
         bufferRef.current.stateTick = Number.isInteger(value.stateTick)
@@ -125,30 +130,24 @@ export const SocketManager = ({ name, team }) => {
           : null;
       }
 
-      if (value && value.walls !== undefined) {    
-        bufferRef.current.walls = value.walls;
-      }
-
       const simDtMs = Number(value?.simDtMs);
+
       if (Number.isFinite(simDtMs) && simDtMs > 0) {
         Socket.serverSimDt = simDtMs / 1000;
       }
+
     };
 
     const onMap = (map) => {
       bufferRef.current.map = map;
     };
 
-    const onWalls = (walls) => {
-      bufferRef.current.walls = walls;
-    };
 
     Socket.on("connect", onConnect);
     Socket.on("disconnect", onDisconnect);
     Socket.on("welcome", onWelcome);
     Socket.on("game_state", onGameState);
     Socket.on("map", onMap);
-    Socket.on("walls", onWalls);
 
     Socket.connect();
 
@@ -166,7 +165,7 @@ export const SocketManager = ({ name, team }) => {
 
       Socket.disconnect();
     };
-  }, [name, team, setCharacters, setMyId, setMap, setWalls]);
+  }, [name, team, setCharacters, setMyId, setMap, setChunks]);
 
   return null;
 };

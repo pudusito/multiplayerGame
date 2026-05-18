@@ -1,16 +1,13 @@
-/* KINEMATIC MOVEMENT */
-/* nota: no estamos usando rigidbody para mover nuestros personajes, el cliente usa prediccion/reconciliacion kinematica
-          para el movimiento del personaje con la logica en el servidor */
-
 import { useRef, useEffect } from "react";
 import * as THREE from "three";
 import { Socket } from "../../conection/SocketConnection.js";
 import { KeyboardInput, MouseInput } from "./inputs";
-
+import { useRapier } from "@react-three/rapier";
 // ------------------------- Constantes compartidas (idénticas al servidor) --------------------------
 
 const WALK_SPEED = 4;
 const RUN_SPEED = 8;
+const SPEED_MULTIPLIER = 1.0; // multiplicador de velocidad global (ajustable dependiendo la classes de personaje)
 const JUMP_VELOCITY = 5;
 
 // exportamos la constante para que otros módulos (RemotePlayers) la reutilicen
@@ -18,7 +15,7 @@ export const GRAVITY = -10;
 
 // --- settings para reconciliación suave ---
 const SERVER_TICK = 1 / 60; // debe coincidir con server TICK_MS
-const SMOOTH_FACTOR = 0.2; // ajustar 0.08..0.35 según gusto
+const SMOOTH_FACTOR = 0.3; // ajustar 0.08..0.35 según gusto
 const SNAP_THRESHOLD = 1.6; // distancia para snap inmediato
 const MAX_FRAME_DELTA = 1 / 20;
 const MAX_PENDING_INPUTS = 180;
@@ -27,8 +24,6 @@ const MAX_SENDS_PER_FRAME = 5;
 // --- Envío de inputs: desacoplar del framerate (cliente)
 const SEND_HZ = 60;
 const SEND_INTERVAL = 1 / SEND_HZ;
-const MIN_SEND_DT = SEND_INTERVAL;
-const MAX_SEND_DT = SEND_INTERVAL;
 
 // --- CROSSHAIR distance desde la cámara (ajustable)
 export const CROSSHAIR_DISTANCE = 20;
@@ -45,8 +40,10 @@ function normalizeAngle(a) {
   return ((a % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
 }
 
+//-------------------------------------------------------------------------------------------------------------------------
 //------- HELPER para obtener la altura del terreno debajo del jugador (raycasting con linea visual) ----------------------
-/*  const raycaster = useRef(new THREE.Raycaster()); */
+//-------------------------------------------------------------------------------------------------------------------------
+
 function sampleGroundY(map, x, z) {
   const terrain = map?.terrain;
   const baseHeight = terrain?.baseHeight ?? 0;
@@ -109,12 +106,33 @@ function sampleGroundY(map, x, z) {
 }
 
 
+//-------------------------------------------------------------------------------------------------------------------------
 // ------------------------- Hook principal para el control del jugador --------------------------
-
-export function usePlayerInput(playerRef, camera, map) {
+//-------------------------------------------------------------------------------------------------------------------------
+export function usePlayerInput(playerRef, camera, bodyRef = null, map, terrainRef = null) {
   const input = KeyboardInput();
   const mouseInput = MouseInput();
-  
+  const raycaster = useRef(new THREE.Raycaster());
+
+  // acceso al world/rapier para consultas avanzadas (shape casts)
+  const { world, rapier } = useRapier();
+
+  // Ajusta estos valores si cambias el collider en Experience.jsx
+  const CAPSULE_RADIUS = 0.6; // arg0 de CapsuleCollider en Experience.jsx (radio horizontal)
+  const CAPSULE_HALF_HEIGHT = 0.3; // arg1 de CapsuleCollider en Experience.jsx (mitad de la altura vertical sin contar los hemisferios)
+  const CAPSULE_OFFSET_Y = 0.9; // la posición Y del CapsuleCollider en Experience.jsx
+
+  // debug ref (para Experience.jsx)
+  const debugRef = useRef(true);
+
+  const cameraModeRef = useRef(0);
+  useEffect(() => {
+    const onCameraMode = (ev) => {
+      if (ev?.detail?.mode !== undefined) cameraModeRef.current = ev.detail.mode;
+    };
+    window.addEventListener("cameraModeChanged", onCameraMode);
+    return () => window.removeEventListener("cameraModeChanged", onCameraMode);
+  }, []);
 
   useEffect(() => {
     // enlaza la referencia del mouse al objeto `input` para que otros módulos lean `input.current.mouse`
@@ -129,10 +147,14 @@ export function usePlayerInput(playerRef, camera, map) {
   // dt del servidor (actualizable desde welcome/game_state)
   const serverTickRef = useRef(SERVER_TICK);
 
+  // multiplicador de velocidad enviado por el servidor (clases)
+  const speedMultiplierRef = useRef(1.0);
+
   // refs para corrección suave desde el servidor (no cambia estructura principal)
   const serverTargetPos = useRef(new THREE.Vector3());
   const serverTargetRotY = useRef(0);
   const needCorrection = useRef(false);
+  
 
   // buffer de snapshots del servidor (para interpolación)
   const snapshotBuffer = useRef(new Map());
@@ -142,10 +164,6 @@ export function usePlayerInput(playerRef, camera, map) {
   const lastFacingYaw = useRef(null); // null = aún no inicializado
   const prevCamYaw = useRef(null);
 
-  // FIX: separar yaw lógico (autoritativo) del yaw visual (suavizado para el mesh).
-  //      Antes había dos sistemas escribiendo rot.y en el mismo frame (reconciliación
-  //      del servidor + orientación al crosshair), lo que causaba el parpadeo con A/D.
-  //      Ahora logicalYaw acumula el valor "real" y visualYaw es el único que escribe rot.y.
   const logicalYaw = useRef(0);  // hacia dónde debe mirar el jugador
   const visualYaw  = useRef(0);  // valor interpolado suave asignado al mesh (rot.y)
 
@@ -162,6 +180,8 @@ export function usePlayerInput(playerRef, camera, map) {
   const lastTeleportMsRef = useRef(0);
   const currentTeleportZoneRef = useRef(null);
 
+
+  // logica de teleport (detectar si el jugador está dentro de una zona de teleport y emitir evento al servidor)
   const tryTeleport = (position) => {
     const teleports = map?.teleports ?? [];
     let insideTeleportId = null;
@@ -200,7 +220,58 @@ export function usePlayerInput(playerRef, camera, map) {
     currentTeleportZoneRef.current = insideTeleportId;
   };
 
-  // Sincroniza dt de simulación con lo que anuncie el servidor
+  // helper: wrapper for castShape / castCollider
+  function sweepCapsule(origin, motion) {
+    if (!world || !rapier || !rapier.ColliderDesc) return null;
+    try {
+      const desc = rapier.ColliderDesc.capsule(CAPSULE_HALF_HEIGHT, CAPSULE_RADIUS);
+      let hit = null;
+      if (typeof world.castShape === "function") {
+        hit = world.castShape(
+          desc,
+          { x: origin.x, y: origin.y, z: origin.z },
+          { x: 0, y: 0, z: 0, w: 1 },
+          { x: motion.x, y: motion.y, z: motion.z },
+          1.0,
+          true
+        );
+      } else if (typeof world.castCollider === "function") {
+        hit = world.castCollider(
+          desc,
+          { x: origin.x, y: origin.y, z: origin.z },
+          { x: 0, y: 0, z: 0, w: 1 },
+          { x: motion.x, y: motion.y, z: motion.z },
+          1.0,
+          true
+        );
+      }
+      if (!hit) return null;
+      const toi = Number(hit.toi ?? hit.timeOfImpact ?? 0);
+      const normal = hit.normal ? new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z) : new THREE.Vector3(0, 1, 0);
+      const hitPoint = origin.clone().add(motion.clone().multiplyScalar(toi));
+      return { toi, normal, hitPoint, raw: hit };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Helper: ground Y via capsule cast or fallback
+  function getGroundYViaCast(x, z, referenceY = 50, maxSearch = 10) {
+    if (!world || !rapier) return null;
+    const startY = referenceY + CAPSULE_OFFSET_Y + maxSearch;
+    const center = new THREE.Vector3(x, startY, z);
+    const motionDown = new THREE.Vector3(0, - (maxSearch + CAPSULE_OFFSET_Y + 1.5), 0);
+    const hit = sweepCapsule(center, motionDown);
+    if (!hit) return null;
+    const impactCenterY = center.y + motionDown.y * hit.toi;
+    const feetY = impactCenterY - CAPSULE_OFFSET_Y;
+    return { feetY, hitPoint: hit.hitPoint, normal: hit.normal };
+  }
+
+//-------------------------------------------------------------------------------------------------------------------------
+// Sincroniza dt de simulación con lo que anuncie el servidor, es decir, sincroniza tick del servidor
+//-------------------------------------------------------------------------------------------------------------------------
+  
   useEffect(() => {
     const updateServerTiming = (value) => {
       const simDtMs = Number(value?.simDtMs);
@@ -218,7 +289,7 @@ export function usePlayerInput(playerRef, camera, map) {
     };
   }, []);
 
-  // Reset defensivo al desconectar
+  // Reset al desconectar
   useEffect(() => {
     const onDisconnect = () => {
       pendingInputs.current = [];
@@ -231,7 +302,12 @@ export function usePlayerInput(playerRef, camera, map) {
     return () => Socket.off("disconnect", onDisconnect);
   }, []);
 
+
+
+  //-------------------------------------------------------------------------------------------------------------------------
   // ------------------------- Manejo de entradas del servidor (AUTHORITY STATE SERVER) --------------------------
+  // ------------------------- handle server snapshots -----------------------------------------------------------
+  //-------------------------------------------------------------------------------------------------------------------------
   useEffect(() => {
     const handleServerChars = (chars) => {
       if (!playerRef.current) return;
@@ -255,6 +331,11 @@ export function usePlayerInput(playerRef, camera, map) {
       // buscamos al jugador local
       const me = chars.find((c) => String(c.id) === String(Socket.id));
       if (!me) return;
+      
+      // sincronizar multiplicador de velocidad desde el servidor (si viene)
+      if (Number.isFinite(me.speedMultiplier)) {
+        speedMultiplierRef.current = Number(me.speedMultiplier);
+      }
 
       // Construimos un target corregido: posición del servidor + re-aplicar pendingInputs usando el dt que vino en cada paquete
       const serverPos = new THREE.Vector3(me.position[0], me.position[1], me.position[2]);
@@ -274,11 +355,13 @@ export function usePlayerInput(playerRef, camera, map) {
         .filter((i) => i.seq > ack)
         .slice(-MAX_PENDING_INPUTS);
 
-      // re-aplicar pending inputs con paso por paquete (usar inp.dt si existe)
+      // re-aplicar pending inputs con paso por paquete
       const corrected = serverPos.clone();
       for (const inp of remaining) {
-        const inputDt = Number.isFinite(inp.dt) ? inp.dt : serverTickRef.current;
-        const step = Math.min(Math.max(inputDt, MIN_SEND_DT), MAX_SEND_DT);
+
+        const step = Number.isFinite(inp.dt)
+          ? Number(inp.dt)
+          : (Number.isFinite(serverTickRef.current) ? serverTickRef.current : SERVER_TICK);
 
         corrected.x += (inp.moveX || 0) * step;
         corrected.z += (inp.moveZ || 0) * step;
@@ -292,8 +375,13 @@ export function usePlayerInput(playerRef, camera, map) {
         simVelY += GRAVITY * step;
         corrected.y += simVelY * step;
 
-        // limite de suelo terrain y base para el target corregido (evitar que el target quede debajo del suelo)
-        const correctedGroundY = sampleGroundY(map, corrected.x, corrected.z);
+        // intentar obtener suelo real via capsule-cast; fallback a sampleGroundY
+        let correctedGroundY = null;
+        if (world && rapier) {
+          const g = getGroundYViaCast(corrected.x, corrected.z, corrected.y, 8);
+          if (g) correctedGroundY = g.feetY;
+        }
+        if (correctedGroundY === null) correctedGroundY = sampleGroundY(map, corrected.x, corrected.z);
         if (corrected.y <= correctedGroundY) {
           corrected.y = correctedGroundY;
           simVelY = 0;
@@ -316,10 +404,11 @@ export function usePlayerInput(playerRef, camera, map) {
 
     Socket.on("characters", handleServerChars);
     return () => Socket.off("characters", handleServerChars);
-  }, [playerRef, map]);
+  }, [playerRef, map, world, rapier]);
 
-
+  //-------------------------------------------------------------------------------------------------------------------------
   // ------------------------- Movimiento LOCAL (predicción CLIENT) --------------------------
+  //-------------------------------------------------------------------------------------------------------------------------
   const updateLocalPosition = (delta) => {
     if (!playerRef.current) return;
 
@@ -333,6 +422,51 @@ export function usePlayerInput(playerRef, camera, map) {
     // referencia de camara (para movimiento relativo)
     const cam = camera || window.__r3f_camera;
     if (!cam) return;
+
+    // detectar click derecho world point
+    const mouse = input.current.mouse;
+    if (
+      mouse && 
+      Array.isArray(mouse.rightClicks) && 
+      mouse.rightClicks.length > 0 &&
+      cameraModeRef.current === 2 // 2 = isométrica
+    ) {
+      const click = mouse.rightClicks.shift(); // consumir
+      const canvasRect = document.querySelector("canvas")?.getBoundingClientRect() ?? { left:0, top:0, width:window.innerWidth, height:window.innerHeight };
+      const ndcX = (click.clientX - canvasRect.left) / canvasRect.width * 2 - 1;
+      const ndcY = -((click.clientY - canvasRect.top) / canvasRect.height) * 2 + 1;
+      const ndc = new THREE.Vector2(ndcX, ndcY);
+      const rc = raycaster.current;
+      rc.setFromCamera(ndc, cam);
+    
+      let worldPoint = null;
+
+      // 1) intentar intersectar contra la malla de terrain si tenemos la referencia
+      if (terrainRef?.current) {
+        const hits = rc.intersectObject(terrainRef.current, true);
+        if (hits && hits.length > 0) {
+          worldPoint = hits[0].point.clone();
+        }
+      }
+
+      // 2) fallback: intersectar un plano en Y del terreno o sampleGroundY
+      if (!worldPoint) {
+        const planeY = map?.terrain?.position?.[1] ?? map?.terrain?.baseHeight ?? 0;
+        const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
+        const p = new THREE.Vector3();
+        if (rc.ray.intersectPlane(groundPlane, p)) {
+          p.y = sampleGroundY(map, p.x, p.z);
+          worldPoint = p;
+        } else {
+          // último recurso: punto largo en dirección del rayo y sampleGroundY
+          const fallback = rc.ray.origin.clone().add(rc.ray.direction.clone().multiplyScalar(1000));
+          fallback.y = sampleGroundY(map, fallback.x, fallback.z);
+          worldPoint = fallback;
+        }
+      }
+
+      input.current.moveTo = worldPoint;
+    }
 
     // calcular dirección de movimiento relativa a la cámara
     const forward = new THREE.Vector3();
@@ -354,10 +488,12 @@ export function usePlayerInput(playerRef, camera, map) {
     let moveX = 0;
     let moveZ = 0;
     let movementYaw = null;
+    
 
     if (hasMove) {
       moveDir.normalize();
-      const speed = input.current.run ? RUN_SPEED : WALK_SPEED;
+      const baseSpeed = input.current.run ? RUN_SPEED : WALK_SPEED;
+      const speed = baseSpeed * (speedMultiplierRef.current ?? 1.0);
       moveX = moveDir.x * speed;
       moveZ = moveDir.z * speed;
       movementYaw = Math.atan2(moveDir.x, moveDir.z);
@@ -393,10 +529,31 @@ export function usePlayerInput(playerRef, camera, map) {
       const dtStep = Math.min(remaining, MAX_SUBSTEP);
       remaining -= dtStep;
 
-      // movimiento horizontal por substep
+      // horizontal: capsule sweep + sliding
       if (hasMove) {
-        pos.x += moveX * dtStep;
-        pos.z += moveZ * dtStep;
+        const desired = new THREE.Vector3(moveX * dtStep, 0, moveZ * dtStep);
+        const ITER_MAX = 3;
+        let remainingMove = desired.clone();
+        let origin = new THREE.Vector3(pos.x, pos.y, pos.z).add(new THREE.Vector3(0, CAPSULE_OFFSET_Y, 0));
+
+        for (let it = 0; it < ITER_MAX && remainingMove.lengthSq() > 1e-6; it++) {
+          const hit = sweepCapsule(origin, remainingMove);
+          if (!hit) {
+            origin.add(remainingMove);
+            remainingMove.set(0, 0, 0);
+            break;
+          }
+          const toi = (hit.toi != null) ? Number(hit.toi) : 0;
+          const travel = remainingMove.clone().multiplyScalar(Math.max(0, toi - 1e-4));
+          origin.add(travel);
+
+          const n = new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z).normalize();
+          const rest = remainingMove.clone().sub(travel);
+          remainingMove.copy(rest.projectOnPlane(n));
+        }
+
+        pos.x = origin.x;
+        pos.z = origin.z;
         tryTeleport(pos);
       }
 
@@ -404,33 +561,90 @@ export function usePlayerInput(playerRef, camera, map) {
       velocity.current.y += GRAVITY * dtStep;
       pos.y += velocity.current.y * dtStep;
 
-      // colisión con terreno (comprobación por substep)
-      const groundY = sampleGroundY(map, pos.x, pos.z);
-      const groundDiff = pos.y - groundY;
+      // si hay datos de heightmap o una malla de terreno, hacer snap; si no, dejar caer libremente
+      const hasTerrainData = !!(map?.terrain && map.terrain.width && map.terrain.heights?.length);
+      const hasTerrainMesh = !!(terrainRef?.current);
 
-      if (groundDiff <= 0) {
-        pos.y = groundY;
-        velocity.current.y = 0;
-        isGrounded.current = true;
-        airJumpsUsed.current = 0;
-        airJumpCooldown.current = 0;
-      } else if (groundDiff < GROUND_SNAP_EPS) {
-        const downAlpha = 1 - Math.pow(1 - 0.5, dtStep * 60); // amortiguado por substep
-        pos.y += (groundY - pos.y) * downAlpha;
-        velocity.current.y = 0;
-        airJumpsUsed.current = 0;
-        airJumpCooldown.current = 0;
-        isGrounded.current = true;
+      // Ground detection by capsule-cast
+      if (world && rapier) {
+        const GROUND_CHECK_DIST = 0.35;
+        const center = new THREE.Vector3(pos.x, pos.y + CAPSULE_OFFSET_Y, pos.z);
+        const extra = Math.max(0, -velocity.current.y * dtStep);
+        const motionLen = GROUND_CHECK_DIST + extra;
+        const motionDown = new THREE.Vector3(0, -motionLen - 0.05, 0);
+        const hit = sweepCapsule(center, motionDown);
+
+        if (hit) {
+          const toi = Number(hit.toi ?? 0);
+          const impactCenterY = center.y + motionDown.y * toi;
+          const groundFeet = impactCenterY - CAPSULE_OFFSET_Y;
+          const groundDiff = pos.y - groundFeet;
+
+          if (groundDiff <= 0) {
+            pos.y = groundFeet;
+            velocity.current.y = 0;
+            isGrounded.current = true;
+            airJumpsUsed.current = 0;
+            airJumpCooldown.current = 0;
+          } else if (groundDiff < GROUND_SNAP_EPS) {
+            const downAlpha = 1 - Math.pow(1 - 0.5, dtStep * 60);
+            pos.y += (groundFeet - pos.y) * downAlpha;
+            velocity.current.y = 0;
+            airJumpsUsed.current = 0;
+            airJumpCooldown.current = 0;
+            isGrounded.current = true;
+          } else {
+            isGrounded.current = false;
+          }
+        } else if (hasTerrainData || hasTerrainMesh) {
+          const groundY = sampleGroundY(map, pos.x, pos.z);
+          const groundDiff = pos.y - groundY;
+
+          if (groundDiff <= 0) {
+            pos.y = groundY;
+            velocity.current.y = 0;
+            isGrounded.current = true;
+            airJumpsUsed.current = 0;
+            airJumpCooldown.current = 0;
+          } else if (groundDiff < GROUND_SNAP_EPS) {
+            const downAlpha = 1 - Math.pow(1 - 0.5, dtStep * 60);
+            pos.y += (groundY - pos.y) * downAlpha;
+            velocity.current.y = 0;
+            airJumpsUsed.current = 0;
+            airJumpCooldown.current = 0;
+            isGrounded.current = true;
+          } else {
+            isGrounded.current = false;
+          }
+        } else {
+          isGrounded.current = false;
+        }
+      } else if (hasTerrainData || hasTerrainMesh) {
+        const groundY = sampleGroundY(map, pos.x, pos.z);
+        const groundDiff = pos.y - groundY;
+
+        if (groundDiff <= 0) {
+          pos.y = groundY;
+          velocity.current.y = 0;
+          isGrounded.current = true;
+          airJumpsUsed.current = 0;
+          airJumpCooldown.current = 0;
+        } else if (groundDiff < GROUND_SNAP_EPS) {
+          const downAlpha = 1 - Math.pow(1 - 0.5, dtStep * 60);
+          pos.y += (groundY - pos.y) * downAlpha;
+          velocity.current.y = 0;
+          airJumpsUsed.current = 0;
+          airJumpCooldown.current = 0;
+          isGrounded.current = true;
+        } else {
+          isGrounded.current = false;
+        }
       } else {
         isGrounded.current = false;
       }
     }
 
-    // --------- Corrección suave aplicada por frame: LERP hacia serverTargetPos si es necesario ----
-    // FIX: eliminamos toda escritura de rot.y dentro de este bloque. La reconciliación
-    //      de posición y la orientación visual son ahora dos sistemas independientes.
-    //      El servidor solo puede corregir logicalYaw (no rot.y), y únicamente cuando
-    //      el jugador está quieto y la discrepancia supera ROT_CORRECTION_THRESHOLD.
+    // corrección suave hacia el target del servidor (reconciliación)
     if (needCorrection.current) {
       const target = serverTargetPos.current;
 
@@ -439,7 +653,7 @@ export function usePlayerInput(playerRef, camera, map) {
       const errHorizontal = Math.hypot(errX, errZ);
       const errY = Math.abs(target.y - pos.y);
 
-      const currentSpeed = input.current.run ? RUN_SPEED : WALK_SPEED;
+      const currentSpeed = (input.current.run ? RUN_SPEED : WALK_SPEED) * (speedMultiplierRef.current ?? 1.0);
       const dynamicSnapThreshold = SNAP_THRESHOLD + currentSpeed * SEND_INTERVAL * 1.5;
 
       if (errHorizontal > dynamicSnapThreshold) {
@@ -453,7 +667,6 @@ export function usePlayerInput(playerRef, camera, map) {
       } else if (errY > 1.25) {
         // discrepancia vertical grande: snap Y únicamente
         pos.y = target.y;
-        // FIX: eliminado rot.y = serverTargetRotY.current
         needCorrection.current = false;
       } else {
         const alpha = 1 - Math.pow(1 - SMOOTH_FACTOR, safeDelta * 60);
@@ -461,13 +674,10 @@ export function usePlayerInput(playerRef, camera, map) {
         pos.x += (target.x - pos.x) * alpha;
         pos.z += (target.z - pos.z) * alpha;
         pos.y += (target.y - pos.y) * vAlpha;
-        // FIX: eliminado rot.y += ((serverTargetRotY - rot.y + π) % 2π - π) * alpha
+
         if (pos.distanceTo(target) < 0.01) needCorrection.current = false;
       }
 
-      // FIX: corrección de rotación solo si el jugador NO está en movimiento activo
-      //      y la discrepancia supera el umbral. Se corrige logicalYaw, no rot.y,
-      //      para que el suavizado visual lo absorba sin producir el parpadeo.
       if (!hasMove) {
         const rotErr = Math.abs(normalizeAngle(serverTargetRotY.current - logicalYaw.current));
         if (rotErr > ROT_CORRECTION_THRESHOLD) {
@@ -478,8 +688,6 @@ export function usePlayerInput(playerRef, camera, map) {
     }
 
     // ------ Orientación hacia el crosshair (punto en la dirección de la cámara) ------
-    // FIX: todo el cálculo trabaja sobre logicalYaw, no sobre rot.y.
-    //      rot.y se escribe UNA SOLA VEZ al final del frame desde visualYaw.
     const camDir = new THREE.Vector3();
     cam.getWorldDirection(camDir);
     const lookPoint = cam.position.clone().add(camDir.multiplyScalar(CROSSHAIR_DISTANCE));
@@ -497,7 +705,7 @@ export function usePlayerInput(playerRef, camera, map) {
       logicalYaw.current    = movementYaw;
     } else {
       const lookYaw = Math.atan2(dx, dz);
-      // FIX: normalizeAngle para comparar diferencia de cámara (evita saltos en ±π)
+
       const camMoved =
         camYaw !== null &&
         prevCamYaw.current !== null &&
@@ -511,14 +719,15 @@ export function usePlayerInput(playerRef, camera, map) {
 
     prevCamYaw.current = camYaw;
 
-    // FIX: única asignación a rot.y en todo el frame.
-    //      Reemplaza el bloque anterior: diff = (...) % (2π) - π; rot.y += diff * rAlpha
+
     const vDiff     = normalizeAngle(logicalYaw.current - visualYaw.current);
     const vAlphaRot = 1 - Math.pow(1 - VISUAL_YAW_SMOOTH, safeDelta * 60);
     visualYaw.current += vDiff * vAlphaRot;
-    rot.y = visualYaw.current; // ← única escritura a rot.y en todo updateLocalPosition
+    rot.y = visualYaw.current; 
 
+    //-------------------------------------------------------------------------------------------------------------------------
     // ------------------------- Enviar al servidor (acumulador/desacoplado del framerate) -------------------------
+    //-------------------------------------------------------------------------------------------------------------------------
     const packetBase = {
       forward: input.current.forward,
       backward: input.current.backward,
@@ -531,7 +740,7 @@ export function usePlayerInput(playerRef, camera, map) {
       moveZ,
     };
 
-    sendAccumulator.current += safeDelta;
+    sendAccumulator.current += delta;
 
     let sentThisFrame = 0;
     while (sendAccumulator.current >= SEND_INTERVAL && sentThisFrame < MAX_SENDS_PER_FRAME) {
@@ -554,8 +763,36 @@ export function usePlayerInput(playerRef, camera, map) {
       sentThisFrame++;
     }
 
-    if (sendAccumulator.current > SEND_INTERVAL * 6) {
-      sendAccumulator.current = SEND_INTERVAL * 2;
+    if (sendAccumulator.current > SEND_INTERVAL * 6) sendAccumulator.current = SEND_INTERVAL * 2;
+
+    // ----------------- Sincronizar RigidBody kinemático de experience -----------------
+    if (bodyRef?.current) {
+      try {
+        const rb = bodyRef.current;
+        const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rot.y, 0));
+      
+        if (typeof rb.setNextKinematicTranslation === "function") {
+          rb.setNextKinematicTranslation({ x: pos.x, y: pos.y, z: pos.z });
+          if (typeof rb.setNextKinematicRotation === "function") {
+            rb.setNextKinematicRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w });
+          } else if (typeof rb.setRotation === "function") {
+            rb.setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true);
+          }
+        } else if (typeof rb.setTranslation === "function") {
+          rb.setTranslation({ x: pos.x, y: pos.y, z: pos.z }, true);
+          if (typeof rb.setRotation === "function") {
+            rb.setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true);
+          }
+        } else if (playerRef?.current) {
+          playerRef.current.position.set(pos.x, pos.y, pos.z);
+          playerRef.current.rotation.y = rot.y;
+        }
+      } catch (error) {
+        if (playerRef?.current) {
+          playerRef.current.position.set(pos.x, pos.y, pos.z);
+          playerRef.current.rotation.y = rot.y;
+        }
+      }
     }
   };
 

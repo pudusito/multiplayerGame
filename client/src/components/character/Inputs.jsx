@@ -72,21 +72,33 @@ export function MouseInput() {
     left: false,
     wheelMiddle: false,
     right: false,
+    rightClicks: [], // para almacenar las coordenadas y tiempos de los clicks derechos
     
     wheel: 0,        // acumulado
     wheelDelta: 0,   // por frame (IMPORTANTE)
   });
 
   useEffect(() => {
+
     const handleMouseMove = (e) => {
       input.current.deltaX += e.movementX;
       input.current.deltaY += e.movementY;
     };
+
     const handleMouseDown = (e) => {
       if (e.button === 0) input.current.left = true;
       if (e.button === 1) input.current.wheelMiddle = true;
-      if (e.button === 2) input.current.right = true;
+      if (e.button === 2) {
+        input.current.right = true;
+        input.current.rightClicks.push({
+          clientX: e.clientX,
+          clientY: e.clientY,
+          time: performance.now(),
+        });
+        e.preventDefault();
+      }
     };
+    
     const handleMouseUp = (e) => {
       if (e.button === 0) input.current.left = false;
       if (e.button === 1) input.current.wheelMiddle = false;
@@ -103,16 +115,18 @@ export function MouseInput() {
       input.current.wheel += delta;  
     };
 
+    const handleContextMenu = (e) => e.preventDefault();
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mousedown", handleMouseDown);
     window.addEventListener("mouseup", handleMouseUp);
     window.addEventListener("wheel", scrollMouse, { passive: false }); // pasive: false para poder llamar preventDefault dentro del handler
-
+    window.addEventListener("contextmenu", handleContextMenu);
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mousedown", handleMouseDown);
       window.removeEventListener("mouseup", handleMouseUp);
       window.removeEventListener("wheel", scrollMouse);
+      window.removeEventListener("contextmenu", handleContextMenu);
     };
 
   }, []);

@@ -1,9 +1,28 @@
+/* 
+----------------------------------------
+| Hook	            Uso
+----------------------------------------
+| useFrame  	  Game loop
+----------------------------------------
+| useThree	    Acceso al motor
+----------------------------------------
+| useRef	      Referencias a objetos
+----------------------------------------
+| useEffect	    Inicialización
+----------------------------------------
+| useMemo	      Optimización
+----------------------------------------
+| useLoader	    Cargar assets         
+----------------------------------------
+*/
+
+
 // -------------------------------------- IMPORTS PRINCIPALES --------------------------------------------------------
-import { ContactShadows, OrbitControls, useCursor, Environment, Text} from "@react-three/drei";
+import { ContactShadows, OrbitControls, useCursor, Environment, Text } from "@react-three/drei";
 import { useState, useRef , useEffect } from "react";
 import { useAtom } from "jotai";
 import { useFrame, useThree } from "@react-three/fiber";
-import { characterAtom, myIdAtom, mapAtom, wallsAtom} from "../conection/SocketConnection.js";
+import { characterAtom, myIdAtom, mapAtom } from "../conection/SocketConnection.js";
 
 // -------------------------------------- IMPORTS SECUNDARIOS --------------------------------------------------------
 /* mapas y objetos de mapa */
@@ -12,7 +31,7 @@ import Map2 from "./terrain/Map2.jsx";
 import Map3 from "./terrain/Map3.jsx";
 import Map4 from "./terrain/Map4.jsx";
 import Map5 from "./terrain/Map5.jsx";
-import Item from "./items/items.jsx";
+import Item from "./terrain/items/items.jsx";
 import Teleport from "./terrain/Teleport.jsx";
 
 /* personajes locales y remotos */
@@ -20,11 +39,12 @@ import { Model } from "./character/Model.jsx";
 import { usePlayerInput } from "./character/CharacterController.jsx";
 import { Camera } from "./character/CameraControl";
 import Crosshair from "../components/ui/CrossHair";
-import { RigidBody } from "@react-three/rapier";
 import CharacterHud from "./ui/CharacterHUD.jsx";
+import ClassZone from "./character/Classes.jsx";
 import Attacks from "./character/Attacks.jsx";
 import RemotePlayer from "./character/RemotePlayers.jsx";
 
+import { RigidBody, CapsuleCollider } from "@react-three/rapier";
 
 // ----------------------------------------------------------------------------------------------
 
@@ -34,25 +54,31 @@ export const Experience = () => {
   const [characters] = useAtom(characterAtom); 
   const [myId] = useAtom(myIdAtom);
   const [map] = useAtom(mapAtom);  //map para colocar elementos en el ground
-  const [attackWalls]= useAtom(wallsAtom)
-
+  
   const myCharacter = characters.find((c) => c.id === myId);
   const currentMapId = myCharacter?.mapId ?? map?.id ?? null;
 
-  const terrainRef = useRef(null); // referencia para el terreno (collider)
+  // referencia para el terreno (collider)
+  const terrainRef = useRef(null); 
   
   const [onFloor, _setOnFloor] = useState(false);
   useCursor(onFloor);
 
+  // referencias para el jugador local y la cámara
+  
   const playerRef = useRef(null); //referencia del jugador local para el movimiento de camara y personaje
   const camTargetRef = useRef(null); // anchor invisible para la cámara (separado del player mesh)
-  const { updateLocalPosition, input } = usePlayerInput(playerRef, camera, map) // pasar la cámara al hook
+  const playerBodyRef = useRef(null); // referencia para el cuerpo del jugador (para física)
+  const { updateLocalPosition, input } = usePlayerInput(playerRef, camera, playerBodyRef, map, terrainRef) // pasar la cámara al hook
 
   useFrame((state, delta) => {updateLocalPosition(delta);}); //mover jugador local cada frame
+
 
   useEffect(() => {
     console.log('Conectado con el id:', myId);
   }, [myId]);
+
+  
 
   return (
     <>
@@ -60,12 +86,12 @@ export const Experience = () => {
       <Camera playerRef={playerRef} mouseSensitivity={0.002} input={input}/> 
       {/* punto centro de mira de la camara */}
       <Crosshair size={0.3} color="red" />
-
+      
 {/* para usar orbitcontrol comentar camera y apretar window key para usar el mouse*/}
 {/* <OrbitControls enableZoom={true} /> */}
       
       {/* mapa y luces */}
-      <color attach="background" args={["#8b8b8b"]} />
+      <color attach="background" args={["#ffffff"]} />
       <directionalLight intensity={1} position={[25, 18, -25]} castShadow />
       <ambientLight intensity={1} />
 
@@ -99,16 +125,17 @@ export const Experience = () => {
       {map?.id === "map_5" && <Map5 map={map} terrainRef={terrainRef} />}
 
 
-      {/* render paredes dinámicas (abilities) */}
-      {attackWalls?.filter(w => w.mapId === currentMapId).map((w,i) => <Wall key={w.id ?? i} w={w} />)}
-
       {/* teleports */}
       {(map?.teleports ?? []).map((tp) => (
         <Teleport key={tp.id} tp={tp} />
       ))}
 
-      <Attacks playerRef={playerRef} camTargetRef={camTargetRef} camera={camera} input={input} />
+      {/* class zones */}
+      {(map?.classZones ?? []).map((zone) => (
+        <ClassZone key={`class-${zone.id}`} zone={zone} playerRef={playerRef} />
+      ))}
 
+      <Attacks playerRef={playerRef} camTargetRef={camTargetRef} camera={camera} input={input} />
 
 
       {/* personajes (local y remotos) */}
@@ -116,29 +143,43 @@ export const Experience = () => {
         const isPlayer = char.id === myId;
         const sameMap = !currentMapId || !char.mapId || char.mapId === currentMapId;
         if (!isPlayer && !sameMap) return null;
+
         if (isPlayer) {
           return ( // renderiza el jugador local: group con ref; su posición la actualizamos en useFrame (client-authority)
-            <group key={char.id} ref={playerRef}>
+            
 
-              <group ref={camTargetRef} position={[0, 1.6, 0]} /> {/* anchor invisible para que la cámara siga establemente */}
-                
-                <Model
-                  hairColor={char.hairColor}
-                  topColor={char.topColor}
-                  bottomColor={char.bottomColor}
-                  shoeColor={char.shoeColor}
-                  animation={char.animation} 
-                />
 
-                <CharacterHud 
-                  playerName={char.name} 
-                  health={char.health} 
+              <group key={char.id} ref={playerRef}>
+                <group ref={camTargetRef} position={[0, 1.6, 0]} />
+
+                <RigidBody
+                  ref={playerBodyRef}
+                  type="kinematicPosition"
+                  colliders={false}
+                  position={[0, 0, 0]}
+                >
+                  <CapsuleCollider args={[0.6, 0.3]} position={[0, 0.9, 0]} />
+                </RigidBody>
+
+                <group position={[0, 0, 0]}>
+                  <Model
+                    hairColor={char.hairColor}
+                    topColor={char.topColor}
+                    bottomColor={char.bottomColor}
+                    shoeColor={char.shoeColor}
+                    animation={char.animation}
+                  />
+                </group>
+
+                <CharacterHud
+                  playerName={char.name}
+                  health={char.health}
                   maxHealth={char.maxHealth}
-                  energy={char.energy} 
-                  maxEnergy={char.maxEnergy} 
+                  energy={char.energy}
+                  maxEnergy={char.maxEnergy}
                 />
-
-            </group>
+              </group>
+    
           );
         } else {
           // renderiza a otros jugadores usando RemotePlayer (interpolación suave)
