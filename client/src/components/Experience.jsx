@@ -23,7 +23,7 @@ import { useState, useRef , useEffect } from "react";
 import { useAtom } from "jotai";
 import { useFrame, useThree } from "@react-three/fiber";
 import { characterAtom, myIdAtom, mapAtom } from "../conection/SocketConnection.js";
-
+import * as THREE from "three";
 // -------------------------------------- IMPORTS SECUNDARIOS --------------------------------------------------------
 /* mapas y objetos de mapa */
 import Map1 from "./terrain/Map1.jsx";
@@ -45,7 +45,7 @@ import Attacks from "./character/Attacks.jsx";
 import RemotePlayer from "./character/RemotePlayers.jsx";
 
 import { RigidBody, CapsuleCollider } from "@react-three/rapier";
-
+import RayoColiciones from "./character/Cast.jsx";
 // ----------------------------------------------------------------------------------------------
 
 //componente principal de la escena
@@ -86,7 +86,7 @@ export const Experience = () => {
       <Camera playerRef={playerRef} mouseSensitivity={0.002} input={input}/> 
       {/* punto centro de mira de la camara */}
       <Crosshair size={0.3} color="red" />
-      
+        
 {/* para usar orbitcontrol comentar camera y apretar window key para usar el mouse*/}
 {/* <OrbitControls enableZoom={true} /> */}
       
@@ -146,40 +146,37 @@ export const Experience = () => {
 
         if (isPlayer) {
           return ( // renderiza el jugador local: group con ref; su posición la actualizamos en useFrame (client-authority)
-            
+            <group key={char.id} ref={playerRef}>
 
-
-              <group key={char.id} ref={playerRef}>
-                <group ref={camTargetRef} position={[0, 1.6, 0]} />
-
-                <RigidBody
-                  ref={playerBodyRef}
-                  type="kinematicPosition"
-                  colliders={false}
-                  position={[0, 0, 0]}
-                >
-                  <CapsuleCollider args={[0.6, 0.3]} position={[0, 0.9, 0]} />
-                </RigidBody>
-
-                <group position={[0, 0, 0]}>
-                  <Model
-                    hairColor={char.hairColor}
-                    topColor={char.topColor}
-                    bottomColor={char.bottomColor}
-                    shoeColor={char.shoeColor}
-                    animation={char.animation}
-                  />
-                </group>
-
-                <CharacterHud
-                  playerName={char.name}
-                  health={char.health}
-                  maxHealth={char.maxHealth}
-                  energy={char.energy}
-                  maxEnergy={char.maxEnergy}
+              <group ref={camTargetRef} position={[0, 1.6, 0]} />
+              <RigidBody
+                ref={playerBodyRef}
+                type="kinematicPosition"
+                colliders={false}
+                position={[0, 0, 0]}
+              >
+                <CapsuleCollider args={[0.6, 0.3]} position={[0, 0.9, 0]} />
+              </RigidBody>
+              <RayoColiciones a={new THREE.Vector3(0,10,0)} b={new THREE.Vector3(0,0,0)} />
+              <group position={[0, 0, 0]}>
+                <Model
+                  hairColor={char.hairColor}
+                  topColor={char.topColor}
+                  bottomColor={char.bottomColor}
+                  shoeColor={char.shoeColor}
+                  animation={char.animation}
                 />
               </group>
-    
+
+              <CharacterHud
+                playerName={char.name}
+                health={char.health}
+                maxHealth={char.maxHealth}
+                energy={char.energy}
+                maxEnergy={char.maxEnergy}
+              />
+
+            </group>
           );
         } else {
           // renderiza a otros jugadores usando RemotePlayer (interpolación suave)

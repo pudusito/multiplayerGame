@@ -9,6 +9,7 @@ import HUD from "./components/ui/HUD";
 import { Physics } from "@react-three/rapier";
 import MusicPlayer from "./components/utilitycomponents/MusicPlayer";
 /* import Sky from "./components/terrain/Sky.jsx"; */
+import "./components/terrain/BVH.jsx"; // importar BVH para optimizar colisiones en el terreno
 
 export default function App() {
 
@@ -137,7 +138,7 @@ export default function App() {
                 >
 
                 <Suspense fallback={<Html><div>Cargando juego...</div></Html>}> {/* puede ser null */}
-                  <Physics gravity={[0, -9.81, 0]} debug={true}> {/* debug true es caro */}
+                  <Physics gravity={[0, -9.81, 0]} debug={false}> {/* debug true es caro */}
                     <Stats /> 
                     <Experience />
                   </Physics>

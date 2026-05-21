@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useTexture } from "@react-three/drei";
 import * as THREE from "three";
 import { RigidBody } from "@react-three/rapier";
+
 
 export const GroundBase = ({ map, baseProps = {}, terrainRef = null }) => {
   if (!map) return null;
@@ -36,6 +37,15 @@ export const GroundBase = ({ map, baseProps = {}, terrainRef = null }) => {
   }
   
   const gridSize = Math.max(map.size[0] * baseSize, map.size[1] * baseSize);
+
+  useEffect(() => {
+    if (!terrainRef?.current) return;
+    const geo = terrainRef.current.geometry;
+    if (geo?.computeBoundsTree) geo.computeBoundsTree();
+    return () => {
+      if (geo?.disposeBoundsTree) geo.disposeBoundsTree();
+    };
+  }, [terrainRef]);
 
   return (
     <>   
